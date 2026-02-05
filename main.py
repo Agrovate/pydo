@@ -1,38 +1,66 @@
 import argparse
+import psycopg2
 
-class Task:
-    def __init__(self, task, desc, status) -> None:
-        self.task = task
-        self.desc = desc
-        self.status = status
+conn = psycopg2.connect(
+                database='todo',
+                user = 'nishant',
+                password='',
+                host = '127.0.0.1',
+                port = 5432
+        )
 
-t_id = 1 
-tasks = {}
+curr = conn.cursor()
+curr.execute("select * from tasks;")
+tasks = curr.fetchall()
 
 #Add Task
 def add(args):
     if args.task == None:
         print("Task name not given")
         exit()
-    
-    tasks[t_id] = Task(args.task, args.desc, args.status)
-    print(tasks[1].task)
+
+    curr.execute('''insert into tasks(task, description, status)
+                 values(%s, %s, %s)''',
+                 (args.task, args.desc, args.status)
+    )
+    print(f"{args.task} successfully")
+    conn.commit()
+
 
 
 #Delete Task
 def dele(args):
     global tasks
-    val = tasks[0]
-    if  args.id != None:
-        val = tasks.pop(args.id, None)
-
-    print(val.task, "is popped")
+    curr.execute('delete from tasks where id = %s returning *',args.id)
+    print("Deleted successfully")
+    conn.commit()
 
 def mod(args):
     global tasks
-
+    
     if args.id != None:
-        tasks[t_id].status = args.status 
+        curr.execute('''
+            update tasks
+            set task = coalesce(%s, task),
+                description = coalesce(%s, description),
+                status = coalesce(%s, status)
+            where id = %s
+            returning *;
+                 ''',
+            (args.task, args.desc, args.status, args.id)
+        )
+        conn.commit()
+    else:
+        print("no id")
+
+def show(args):
+    curr.execute("select * from tasks;")
+    tasks = curr.fetchall()
+   
+    print("ID\tTASK\tDESCRIPTION\t\t\tSTATUS")
+    for task in tasks:
+        id, name, desc, status = task
+        print(f"{id}\t{name}\t{desc}\t\t{status}")
 
 
 
@@ -58,11 +86,18 @@ del_parser.set_defaults(func=dele)
 mod_parser = subparser.add_parser('mod')
 mod_parser.add_argument('--task', '-t')
 mod_parser.add_argument('--id', '-i')
+mod_parser.add_argument('--desc', '-d')
 mod_parser.add_argument('--status', '-s')
-del_parser.set_defaults(func=mod)
+mod_parser.set_defaults(func=mod)
+
+#Display
+show_parser = subparser.add_parser('show')
+show_parser.set_defaults(func=show)
+
 
 args = parser.parse_args()
 
-
 if hasattr(args, 'func'):
     args.func(args)
+
+conn.close()
